@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dark Mode Control</title>
+    <link rel="stylesheet" href="./assets/main.css">
+</head>
+<body>
+    <div class="header">
+        <h2>Dark by Eyed™</h2>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="controls">Controls</div>
+        <div class="tab" data-tab="sites">Site Lists</div>
+    </div>
+
+    <div class="tab-content active" id="controls-tab">
+        <div class="website-title">
+            <p id="currentUrl" class="bold-title">Loading...</p>
+        </div>
+
+        <div class="mode-selector">
+            <select id="listMode" data-sync="listMode">
+                <option value="blacklist">Blacklist Mode</option>
+                <option value="whitelist">Whitelist Mode</option>
+            </select>
+        </div>
+
+        <div class="switch-container">
+            <span>Add to <span id="listTypeText">Blacklist</span></span>
+            <label class="switch">
+                <input type="checkbox" id="siteToggle" data-sync="siteStatus">
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+
+    <div class="tab-content" id="sites-tab">
+        <div class="site-list">
+            <h3><span id="listTitle">Blacklisted</span> Websites</h3>
+            <div id="site-list-items" class="site-list-items"></div>
+            <div class="add-container">
+                <input type="text" id="siteInput" placeholder="Add website">
+                <button id="addSiteBtn">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 
+    Next implementation...
+    <div class="shortcuts">
+        Shortcuts: Shift+Alt+F to toggle site in list
+    </div> 
+    -->
+
+    <script src="popup.js"></script>
+</body>
+</html>
