@@ -33,7 +33,7 @@ Option 2: Download the latest release from our [GitHub Releases](https://github.
 ### Chrome
 
 Option 1: Install Dark by Eyed™ from the Chrome Web Store:
-[Get it for Chrome](https://chrome.google.com/webstore/detail/dark-by-eyed)
+[Get it for Chrome](https://chrome.google.com/webstore/detail/ngfmjecoakeejfpmcnjcefkdckbhaeda)
 
 Option 2: Download the latest release from our [GitHub Releases](https://github.com/cesp99/dark/releases) page and install it manually.
 
