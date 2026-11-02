@@ -3,7 +3,7 @@
   <h1>Dark by Eyed™</h1>
   <p>Enjoy the web better by having dark mode everywhere.</p>
   <p>
-    <img src="https://img.shields.io/badge/version-v0.1.0-blue.svg" alt="Version">
+    <img src="https://img.shields.io/badge/version-v2.0.0-blue.svg" alt="Version">
     <img src="https://img.shields.io/badge/license-GPL%203.0-green.svg" alt="License">
   </p>
 </div>
@@ -15,11 +15,15 @@ It provides a seamless dark mode experience with customizable blacklist and whit
 
 ## Features
 
-- 🌙 Instant dark mode for any website
-- 📋 Customizable blacklist and whitelist modes
-- 🎨 Smart color conversion algorithm
-- ⚡ Lightweight and performant
-- 🔒 Privacy-focused with no data collection
+- 🌙 Instant dark mode on any website, with no white flash while pages load
+- 🖼️ Photos, videos and photo backgrounds keep their real colours; coloured UI keeps its hue
+- 🧠 Skips sites that already have their own dark theme (you can still force it per site)
+- 🎚️ Brightness, contrast and sepia sliders, applied live to every tab
+- 🖥️ Optional: only darken while your OS is in dark mode
+- 📋 "Everywhere, except…" or "Only on…" site lists, with `*.example.com` and `example.*` patterns
+- ⌨️ `Alt+Shift+D` toggles the current site
+- ⚡ One GPU filter instead of repainting every element (~550 ms → ~30 ms style work on a 4000-row page)
+- 🔒 Privacy-focused: no data collection, no remote resources, nothing stored from private windows
 
 ## Installation
 
@@ -55,26 +59,35 @@ We welcome contributions to Dark! Here's how you can help:
 5. Push to the branch (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
 
-Please make sure to update tests as appropriate and follow the existing code style.
+Please run `npm test` and update tests as appropriate.
 
 ## Development
 
+Both browser packages are built from one source tree in `src/` (see [ARCHITECTURE.md](ARCHITECTURE.md)).
+
 ```bash
-# Clone the repository
-git clone https://github.com/cesp99/dark.git
-
-# Load the extension in Chrome
-1. Open chrome://extensions
-2. Enable Developer mode
-3. Click "Load unpacked"
-4. Select the dark-chrome directory
-
-# Load the extension in Firefox
-1. Open about:debugging
-2. Click "This Firefox"
-3. Click "Load Temporary Add-on"
-4. Select manifest.json from the dark-firefox directory
+git clone https://github.com/cesp99/dark.git && cd dark
+npm install
+npm run build          # -> dist/chrome and dist/firefox (add -- --zip for store packages)
 ```
+
+Load the extension:
+
+- **Chrome:** open `chrome://extensions`, enable Developer mode, "Load unpacked", select `dist/chrome`
+- **Firefox:** open `about:debugging`, "This Firefox", "Load Temporary Add-on", select `dist/firefox/manifest.json`
+
+Tests:
+
+```bash
+npm run test:unit      # core logic
+npm run test:chrome    # Playwright + Chromium end-to-end (screenshots in tests/e2e/artifacts)
+npm run test:firefox   # system Firefox over WebDriver BiDi
+node tests/e2e/engine.mjs [--firefox]   # engine rendering/performance cases
+npm run test:legacy    # same Chromium suite against the v1 extension from main
+npm run lint:firefox
+```
+
+The rendering engine (`src/engine.js`) is shared verbatim with [dark.js](https://github.com/cesp99/dark.js).
 
 ## License
 
