@@ -1,0 +1,23 @@
+{
+  "name": "dark-by-eyed",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Enjoy the web better by having dark mode everywhere.",
+  "license": "GPL-3.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test tests/unit/ && node tests/e2e/chrome.mjs && node tests/e2e/firefox.mjs",
+    "test:unit": "node --test tests/unit/",
+    "test:chrome": "node tests/e2e/chrome.mjs",
+    "test:firefox": "node tests/e2e/firefox.mjs",
+    "test:legacy": "node tests/e2e/chrome.mjs --legacy",
+    "lint:firefox": "web-ext lint --source-dir dist/firefox"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1",
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^25.16.0",
+    "web-ext": "^10.8.0"
+  }
+}

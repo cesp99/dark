@@ -1,4 +1,5 @@
 .DS_Store
-
-dark-chrome.zip
-dark-firefox.zip
+node_modules/
+dist/
+*.zip
+tests/e2e/artifacts/
