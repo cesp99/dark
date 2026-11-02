@@ -9,7 +9,7 @@ import { ROOT } from '../e2e/lib.mjs';
 const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 const tick = () => new Promise(r => setTimeout(r, 0));
 
-function setup({ stored = {}, url = 'https://light.test/page', earlyEnabled = false, nativeDark = false, readyState = 'complete' } = {}) {
+function setup({ stored = {}, url = 'https://light.test/page', earlyEnabled = false, nativeDark = false, readyState = 'complete', incognito = false } = {}) {
   const data = { ...stored };
   const writes = [];
   const storageListeners = [], messageListeners = [], mqlListeners = [];
@@ -23,6 +23,7 @@ function setup({ stored = {}, url = 'https://light.test/page', earlyEnabled = fa
     detectNativeDark() { return this.native; },
   };
   const api = {
+    extension: { inIncognitoContext: incognito },
     runtime: { id: 'ext', onMessage: { addListener: f => messageListeners.push(f) } },
     storage: {
       onChanged: { addListener: f => storageListeners.push(f) },
@@ -48,7 +49,7 @@ function setup({ stored = {}, url = 'https://light.test/page', earlyEnabled = fa
   };
   window.top = window;
   const ctx = vm.createContext({
-    URL, console, setTimeout, clearTimeout, chrome: api, window, document, location: { href: url },
+    URL, console, setTimeout, clearTimeout, chrome: api, window, document, location: { href: url, protocol: new URL(url).protocol },
     MutationObserver: class { observe() {} disconnect() {} },
   });
   ctx.globalThis = ctx;
@@ -69,7 +70,7 @@ test('light page: engine enabled with the stored parameters', async () => {
   assert.equal(t.engine.on, true);
   assert.equal(t.engine.params.brightness, 80);
   const state = await t.ask({ type: 'get-state' });
-  assert.deepEqual({ ...state }, { host: 'light.test', dark: true, reason: 'on' });
+  assert.deepEqual({ ...state }, { host: 'light.test', dark: true, reason: 'on', nativeDark: false });
 });
 
 test('early script already enabled: parameters are updated in place (no disable/enable)', async () => {
@@ -116,4 +117,38 @@ test('restricted pages are never darkened', async () => {
 test('ignores unrelated runtime messages', async () => {
   const t = setup();
   assert.equal(await t.ask({ type: 'something-else' }), undefined);
+});
+
+test('host cached as natively dark: a light page is darkened, and other tabs re-caching the host do not undo it', async () => {
+  const t = setup({ stored: { nativeDarkHosts: ['light.test'] } });
+  await tick(); await tick();
+  assert.equal(t.engine.on, true);
+  assert.equal((await t.ask({ type: 'get-state' })).reason, 'on');
+  // Another tab of the same host detects a dark page and writes the cache.
+  await t.setStorage({ nativeDarkHosts: ['other.test', 'light.test'] });
+  assert.equal(t.engine.on, true);
+});
+
+test('private window: a natively dark page is handled but nothing is written to storage', async () => {
+  const t = setup({ nativeDark: true, earlyEnabled: true, incognito: true });
+  await tick(); await tick(); await tick();
+  assert.equal(t.engine.on, false);
+  assert.equal((await t.ask({ type: 'get-state' })).reason, 'native-dark');
+  assert.equal(t.writes.length, 0);
+});
+
+test('host the user forced on: stays dark although it looks natively dark, nothing cached', async () => {
+  const t = setup({ nativeDark: true, earlyEnabled: true, stored: { forceDark_sites: ['light.test'] } });
+  await tick(); await tick(); await tick();
+  assert.equal(t.engine.on, true);
+  assert.equal(t.writes.length, 0);
+});
+
+test('local files are darkened in blacklist mode and left alone in whitelist mode', async () => {
+  let t = setup({ url: 'file:///home/me/page.html' });
+  await tick(); await tick();
+  assert.equal(t.engine.on, true);
+  t = setup({ url: 'file:///home/me/page.html', earlyEnabled: true, stored: { listMode: 'whitelist', whitelist_sites: ['a.com'] } });
+  await tick(); await tick();
+  assert.equal(t.engine.on, false);
 });

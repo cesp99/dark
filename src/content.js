@@ -17,17 +17,28 @@
 
   const api = Core.api;
   const host = Core.isRestrictedUrl(location.href) ? '' : Core.hostFromUrl(location.href);
+  const localFile = location.protocol === 'file:';
   const engine = Engine.create();
   const mql = window.matchMedia('(prefers-color-scheme: dark)');
+  // Private windows share storage.local with normal ones: nothing seen there is written to disk.
+  const incognito = !!(api.extension && api.extension.inIncognitoContext);
 
   let settings = null;
   let decision = { dark: engine.isEnabled(), reason: 'pending' };
   let nativeDetected = false; // this page was seen to ship its own dark theme
-  let lightStreak = 0;        // consecutive "light" detections on a host cached as natively dark
+  let seenLight = false;      // this page was looked at and is light (it does not ship a dark theme)
+  let lightStreak = 0;        // "light" detections at load and later, on a host cached as natively dark
+  let cachedAtStart = false;  // the host was cached when this page loaded (so it got no early script)
   let persisting = false;
 
   const ENGINE_KEYS = { brightness: 1, contrast: 1, sepia: 1 };
-  const env = () => ({ systemDark: mql.matches, nativeDark: nativeDetected });
+  // The page's own detection wins over the per-host cache, which is only a hint to avoid a flash
+  // (and is shared by every page of the host, in every tab).
+  const env = () => ({
+    systemDark: mql.matches,
+    nativeDark: nativeDetected ? true : seenLight ? false : undefined,
+    localFile,
+  });
 
   function apply() {
     if (!settings) return;
@@ -43,28 +54,32 @@
 
   /** Detection only matters when the page would be dark if it were not natively dark. */
   function detectionMatters() {
-    if (!settings || !settings.detectDark || !host) return false;
-    return Core.decide(Object.assign({}, settings, { nativeDarkHosts: [] }), host, { systemDark: mql.matches }).dark;
+    if (!settings || !settings.detectDark || (!host && !localFile) || Core.isForced(settings, host)) return false;
+    return Core.decide(settings, host, { systemDark: mql.matches, nativeDark: false, localFile }).dark;
   }
 
-  const isCached = () => settings.nativeDarkHosts.includes(Core.normalizeHost(host));
+  const isCached = () => !!host && settings.nativeDarkHosts.includes(Core.normalizeHost(host));
 
   function looksNativeDark() {
     try { return engine.detectNativeDark(); } catch (e) { console.warn('[dark] detection failed', e); return false; }
   }
 
   /**
-   * @param {'body'|'ready'|'load'|'late'|'change'} phase
+   * @param {'body'|'ready'|'settings'|'load'|'late'|'change'} phase
    * Before the settings have arrived this only prevents a flash: if the early script darkened a page
    * that turns out to be natively dark, the engine is switched off at once (decide() runs later).
-   * A host cached as natively dark is forgotten again only if the page is light at every phase of a
-   * load (sites whose theme follows the OS, or where only some pages are dark).
+   * A light page is darkened as soon as it is seen to be light, even on a host cached as natively dark
+   * (the cache only decides before the page could be looked at). A page that loaded with its host
+   * cached forgets the host again if it is still light at load and a second later.
    */
   function detect(phase) {
     if (!settings) {
-      if (!nativeDetected && engine.isEnabled() && looksNativeDark()) {
+      if (nativeDetected || !engine.isEnabled()) return;
+      if (looksNativeDark()) {
         nativeDetected = true;
         engine.disable();
+      } else {
+        seenLight = true;
       }
       return;
     }
@@ -75,8 +90,12 @@
       remember();
       return;
     }
-    if (phase === 'ready' || phase === 'load' || phase === 'late') lightStreak++;
-    if (phase === 'late' && lightStreak >= 3 && isCached()) {
+    // A light page is darkened right away, even on a host cached as natively dark.
+    if (!seenLight) { seenLight = true; apply(); }
+    if (phase === 'load' || phase === 'late') lightStreak++;
+    // Only a page that was itself misled by the cache clears it: a light page that happens to be open
+    // while another tab caches the host leaves the entry alone.
+    if (phase === 'late' && lightStreak >= 2 && cachedAtStart && isCached()) {
       persist(s => {
         const h = Core.normalizeHost(host);
         return s.nativeDarkHosts.includes(h) ? { nativeDarkHosts: s.nativeDarkHosts.filter(x => x !== h) } : null;
@@ -89,12 +108,12 @@
    * re-written: every write re-registers the early script in the background.
    */
   function remember() {
-    if (!isCached()) persist(s => Core.rememberNativeDarkUpdate(s, host));
+    if (host && !isCached()) persist(s => Core.rememberNativeDarkUpdate(s, host));
   }
 
   /** Writes an update computed from fresh settings; storage is only touched when it is non-null. */
   async function persist(makeUpdate) {
-    if (persisting) return;
+    if (persisting || incognito) return;
     persisting = true;
     try {
       const update = makeUpdate(await Core.getSettings());
@@ -152,6 +171,7 @@
     if (!settings) return;
     // A site whose own theme follows the OS may have switched: look again once its scripts have run.
     nativeDetected = false;
+    seenLight = false;
     lightStreak = 0;
     if (document.readyState !== 'loading') detect('change'); // media queries apply synchronously
     apply();
@@ -165,12 +185,15 @@
       console.warn('[dark] could not read settings', e);
       return;
     }
+    if (decision.reason === 'pending') cachedAtStart = isCached();
     apply();
   }
 
-  if (host) scheduleDetection();
+  if (host || localFile) scheduleDetection();
   const ready = reload().then(() => {
     if (nativeDetected && detectionMatters()) remember(); // detected before the settings arrived
+    // A host cached as natively dark got no early script: look at the page now rather than at load.
+    else if (!nativeDetected && !seenLight && document.body && (host || localFile)) detect('settings');
   });
 
   api.storage.onChanged.addListener(onStorageChanged);
@@ -180,7 +203,7 @@
   api.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (!message || message.type !== 'get-state') return false;
     if (sender && sender.id && sender.id !== api.runtime.id) return false;
-    ready.then(() => sendResponse({ host, dark: engine.isEnabled(), reason: decision.reason }));
+    ready.then(() => sendResponse({ host, dark: engine.isEnabled(), reason: decision.reason, nativeDark: nativeDetected }));
     return true;
   });
 })();

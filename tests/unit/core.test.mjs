@@ -72,8 +72,46 @@ test('toggleSiteUpdate flips state in both modes and removes wildcard matches', 
   assert.deepEqual(plain(C.toggleSiteUpdate(s, 'b.com')), { blacklist_sites: ['*.google.com', 'a.com', 'b.com'] });
   s = { listMode: 'whitelist', whitelist_sites: [] };
   assert.deepEqual(plain(C.toggleSiteUpdate(s, 'www.wiki.org')), { whitelist_sites: ['wiki.org'] });
+  // Turning on a site the cache says is natively dark also overrides detection for it.
   s = { nativeDarkHosts: ['x.com'], blacklist_sites: ['x.com'] };
-  assert.deepEqual(plain(C.toggleSiteUpdate(s, 'x.com')), { blacklist_sites: [], nativeDarkHosts: [] });
+  assert.deepEqual(plain(C.toggleSiteUpdate(s, 'x.com')), { blacklist_sites: [], forceDark_sites: ['x.com'], nativeDarkHosts: [] });
+});
+
+test('site switch on a natively dark site: off shows off, on forces dark, off again drops the override', () => {
+  const env = { nativeDark: true };
+  let s = C.sanitize({ blacklist_sites: [] });
+  assert.equal(C.decide(s, 'dark.test', env).reason, 'native-dark');
+  assert.equal(C.siteOn(s, 'dark.test', env), false); // the switch shows what the page gets
+  let u = C.toggleSiteUpdate(s, 'dark.test', env);
+  assert.deepEqual(plain(u), { forceDark_sites: ['dark.test'] });
+  s = C.sanitize({ ...s, ...u });
+  assert.deepEqual(plain(C.decide(s, 'dark.test', env)), { dark: true, reason: 'on' });
+  assert.equal(C.siteOn(s, 'dark.test', env), true);
+  u = C.toggleSiteUpdate(s, 'dark.test', env);
+  assert.deepEqual(plain(u), { forceDark_sites: [] });
+  s = C.sanitize({ ...s, ...u });
+  assert.equal(C.decide(s, 'dark.test', env).reason, 'native-dark');
+  // A light page (no native theme): a plain blacklist round-trip, no override.
+  u = C.toggleSiteUpdate(s, 'light.test', { nativeDark: false });
+  assert.deepEqual(plain(u), { blacklist_sites: ['light.test'] });
+  s = C.sanitize({ ...s, ...u });
+  assert.deepEqual(plain(C.toggleSiteUpdate(s, 'light.test', { nativeDark: false })), { blacklist_sites: [] });
+});
+
+test('decide: the page’s own native-dark verdict wins over the host cache', () => {
+  const s = { nativeDarkHosts: ['site.test'] };
+  assert.equal(C.decide(s, 'site.test').reason, 'native-dark');                       // no verdict yet: cache
+  assert.deepEqual(plain(C.decide(s, 'site.test', { nativeDark: false })), { dark: true, reason: 'on' });
+  assert.equal(C.decide({}, 'site.test', { nativeDark: true }).reason, 'native-dark');
+  assert.equal(C.decide({ ...s, forceDark_sites: ['site.test'] }, 'site.test').dark, true);
+});
+
+test('decide: local files follow the list mode', () => {
+  assert.deepEqual(plain(C.decide({}, '', { localFile: true })), { dark: true, reason: 'on' });
+  assert.equal(C.decide({ listMode: 'whitelist', whitelist_sites: ['a.com'] }, '', { localFile: true }).reason, 'not-listed');
+  assert.equal(C.decide({ enabled: false }, '', { localFile: true }).reason, 'disabled');
+  assert.equal(C.decide({}, '', { localFile: true, nativeDark: true }).reason, 'native-dark');
+  assert.equal(C.decide({}, '').reason, 'no-host');
 });
 
 test('rememberNativeDarkUpdate is bounded and deduplicated', () => {
@@ -98,6 +136,35 @@ test('toMatchPatterns', () => {
   assert.deepEqual(plain(C.toMatchPatterns('aploi.de')), ['*://aploi.de/*', '*://www.aploi.de/*']);
   assert.deepEqual(plain(C.toMatchPatterns('example.*')), []);
   assert.deepEqual(plain(C.toMatchPatterns('bad pattern')), []);
+  // v1 entries: www. is the same site.
+  assert.deepEqual(plain(C.toMatchPatterns('www.example.com')), ['*://example.com/*', '*://www.example.com/*']);
+});
+
+test('toMatchPatterns: IP addresses and numeric hosts never produce patterns Chrome rejects', () => {
+  assert.deepEqual(plain(C.toMatchPatterns('192.168.1.1')), ['*://192.168.1.1/*']);
+  assert.deepEqual(plain(C.toMatchPatterns('127.0.0.1')), ['*://127.0.0.1/*']);
+  for (const p of ['123', '0', 'a.123', '*.1.2.3.4', '999.1.1.1', '1.2.3', 'x.0x1f']) assert.deepEqual(plain(C.toMatchPatterns(p)), [], p);
+  assert.deepEqual(plain(C.toMatchPatterns('localhost')), ['*://localhost/*', '*://www.localhost/*']);
+  // Typed into the popup, an IP is accepted and maps to a valid pattern.
+  assert.equal(C.parseSiteInput('http://127.0.0.1:8123/').value, '127.0.0.1');
+});
+
+test('parseSiteInput accepts Unicode (IDN) names and stores punycode; toUnicodeHost shows them', () => {
+  assert.deepEqual(plain(C.parseSiteInput('münchen.de')), { ok: true, value: 'xn--mnchen-3ya.de' });
+  assert.deepEqual(plain(C.parseSiteInput('MÜNCHEN.DE')), { ok: true, value: 'xn--mnchen-3ya.de' });
+  assert.deepEqual(plain(C.parseSiteInput('*.münchen.de')), { ok: true, value: '*.xn--mnchen-3ya.de' });
+  assert.deepEqual(plain(C.parseSiteInput('münchen.*')), { ok: true, value: 'xn--mnchen-3ya.*' });
+  assert.equal(C.parseSiteInput('https://münchen.de/').value, 'xn--mnchen-3ya.de');
+  assert.equal(C.toUnicodeHost('xn--mnchen-3ya.de'), 'münchen.de');
+  assert.equal(C.toUnicodeHost('*.xn--bcher-kva.example'), '*.bücher.example');
+  assert.equal(C.toUnicodeHost('xn--fsqu00a.xn--0zwm56d'), '例子.测试');
+  assert.equal(C.toUnicodeHost('example.com'), 'example.com');
+  assert.equal(C.toUnicodeHost('xn--!!.com'), 'xn--!!.com'); // invalid: left as is
+});
+
+test('normalizeSiteList: v1 entries are normalised, deduplicated, junk kept', () => {
+  assert.deepEqual(plain(C.normalizeSiteList(['www.example.com', 'Example.com', '*.foo.org', 'not valid!', 3, 'b.com'])),
+    ['example.com', '*.foo.org', 'not valid!', 'b.com']);
 });
 
 test('isRestrictedUrl', () => {
