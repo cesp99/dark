@@ -13,7 +13,7 @@ import {
 
 const LEGACY = process.argv.includes('--legacy');
 const HEADED = process.argv.includes('--headed');
-const extDir = LEGACY ? extractLegacy().chrome : path.join(ROOT, 'dist/chrome');
+const extDir = LEGACY ? extractLegacy().chrome : path.join(process.env.DIST_DIR || path.join(ROOT, 'dist'), 'chrome');
 assert(fs.existsSync(path.join(extDir, 'manifest.json')), `No manifest in ${extDir} — run npm run build`);
 const manifest = JSON.parse(fs.readFileSync(path.join(extDir, 'manifest.json'), 'utf8'));
 const popupPath = manifest.action.default_popup;
