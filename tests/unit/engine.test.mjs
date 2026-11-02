@@ -74,3 +74,18 @@ test('media list re-inverts leaf media but not <picture> or SVG images', () => {
   assert.match(list, /(^|,)video(,|$)/);
   assert.ok(!/(^|,)picture(,|$)/.test(list));
 });
+
+test('SVG thumbnails (Wikimedia ".svg/…svg.png") are treated as SVG images', () => {
+  const img = U.MEDIA[0];
+  for (const part of ['[src$=".svg" i]', '[src*=".svg/" i]', '[src*=".svg.png" i]', '[src*="/svg/" i]']) assert.ok(img.includes(`:not(${part})`), part);
+});
+
+test('top-layer rule uses a forgiving :is() list (old engines skip unknown pseudo-classes)', () => {
+  assert.match(U.TOP_LAYER, /^:is\(.*:fullscreen.*:modal.*:popover-open.*\)$/);
+});
+
+test('nesting guard: flat, one bucketable selector per target, no CSS nesting', () => {
+  const r = U.guardRule(['.a', 'video'], ['img', '.x .y']);
+  assert.equal(r, ':is(.a,video) img,:is(.a,video) .x .y{filter:none!important}');
+  assert.ok(!r.includes('&'));
+});

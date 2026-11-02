@@ -26,10 +26,18 @@ function heavyPage() {
   return `<!doctype html><html><head><link rel="stylesheet" href="engine-cases.css"><style>.row{height:40px}</style></head><body>${rows.join('')}</body></html>`;
 }
 
+/** An infinite-scroll feed: N rows, and photo cards styled only by a cross-origin (unreadable) stylesheet. */
+function feedPage(n) {
+  const rows = [];
+  for (let i = 0; i < n; i++) rows.push(`<div class="row"><span>Row ${i}</span> <a href="#">link</a></div>`);
+  return `<!doctype html><html><head><link rel="stylesheet" href="http://xo.test/engine-cases-xo.css"><style>.row{height:24px}.card{width:200px;height:110px;display:inline-block}</style></head><body>${rows.join('')}</body></html>`;
+}
+
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.svg': 'image/svg+xml', '.js': 'text/javascript' };
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   if (url.pathname === '/heavy-engine.html') { res.writeHead(200, { 'content-type': TYPES['.html'] }); return res.end(heavyPage()); }
+  if (url.pathname === '/feed.html') { res.writeHead(200, { 'content-type': TYPES['.html'] }); return res.end(feedPage(Number(url.searchParams.get('n')) || 8000)); }
   const file = path.join(FIXTURES, path.basename(url.pathname));
   if (!fs.existsSync(file)) { res.writeHead(404); return res.end('not found'); }
   res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream', 'cache-control': 'no-store' });
@@ -124,6 +132,21 @@ await expectRed('#svg-image', 'SVG <image>');
 await expectRed('#vid', '<video> (poster)');
 await expectRed('x-card >>> #sh-img', '<img> inside an open shadow root');
 await expectRed('x-lazy >>> #lazy-img', '<img> inside a shadow root attached after load');
+await suite.test('content drawn over a photo layer keeps its designed colours (hero text)', async () => {
+  const over = await region(cases, png, '#cover-over');
+  const b = await rect(cases, '#cover');
+  const photo = avgColor(png, Math.round(b.x + 150), Math.round(b.y + 75), 40, 25);
+  const marks = await cases.evaluate(() => [document.getElementById('cover').getAttribute('data-dark-bg'), getComputedStyle(document.getElementById('cover-img')).filter]);
+  assert(isLight(over) && isReddish(photo), `overlay rgb(${over}) photo rgb(${photo}) mark=${marks.join(' / ')}`);
+  return `overlay rgb(${over}) photo rgb(${photo})`;
+});
+await suite.test('raster thumbnails of SVGs (Wikimedia .svg.png) follow the page; photos do not', async () => {
+  const f = await cases.evaluate(() => ['/w/thumb/a/ab/Euler.svg/250px-Euler.svg.png', '/w/thumb/c/cd/Photo.jpg/250px-Photo.jpg'].map(src => {
+    const i = document.createElement('img'); i.src = src; i.alt = ''; document.body.appendChild(i);
+    const v = getComputedStyle(i).filter; i.remove(); return v;
+  }));
+  assert(f[0] === 'none' && f[1] !== 'none', `svg thumb filter=${f[0]} photo thumb filter=${f[1]}`);
+});
 await suite.test('gradient background follows the page (not re-inverted)', async () => {
   const c = await region(cases, png, '#gradient');
   assert(isDark(c), `rgb(${c})`);
@@ -177,6 +200,21 @@ await suite.test('fullscreen <video> keeps its colours', async () => {
   assert(isReddish(c), `fullscreen video rgb(${c})`);
   return `rgb(${c})`;
 });
+await suite.test('translucent black modal scrim dims the dark page (no white haze)', async () => {
+  const before = (img => avgColor(img, img.width - 120, img.height - 120, 80, 80))(await shot(cases, 'scrim-before'));
+  await cases.evaluate(() => {
+    const d = document.createElement('div');
+    d.id = 'scrim';
+    d.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50';
+    document.body.appendChild(d);
+  });
+  await sleep(700);
+  const p = await shot(cases, 'scrim');
+  const c = avgColor(p, p.width - 120, p.height - 120, 80, 80);
+  await cases.evaluate(() => document.getElementById('scrim').remove());
+  assert(isDark(c) && c[0] <= before[0], `page under the scrim rgb(${c}), without rgb(${before})`);
+  return `rgb(${before}) -> rgb(${c})`;
+});
 await cases.close();
 
 // ---------------------------------------------------------------- native-dark heuristics
@@ -193,6 +231,7 @@ await nativeCase('dark app shell on a transparent body is detected as natively d
 await nativeCase('light site with a dark hero is still darkened', 'light-dark-hero.html', true);
 await nativeCase('light site behind a dark consent overlay is still darkened', 'light-overlay.html', true);
 await nativeCase('theme applied after load is detected', 'late-theme.html', false, 2200);
+await nativeCase('dark html behind a light body covering the page is not natively dark', 'html-dark-body-light.html', true);
 
 // ---------------------------------------------------------------- cost
 if (!FIREFOX) {
@@ -226,6 +265,34 @@ if (!FIREFOX) {
     const afterLoad = long.slice(1);
     assert(afterLoad.every(d => d < 50), `long tasks: ${long.join(', ')} ms`);
     return `recalcStyle=${Math.round(m.RecalcStyleDuration * 1000)}ms script=${Math.round(m.ScriptDuration * 1000)}ms long=[${long.join(',')}]`;
+  });
+}
+
+if (!FIREFOX) {
+  await suite.test('no long tasks when an infinite-scroll feed appends photo cards (unreadable stylesheet)', async () => {
+    const p = await newPage();
+    await p.addInitScript(() => {
+      window.__long = [];
+      new PerformanceObserver(l => { for (const e of l.getEntries()) window.__long.push([Math.round(e.startTime), Math.round(e.duration)]); }).observe({ type: 'longtask', buffered: true });
+    });
+    await p.goto('http://feed.test/feed.html?n=8000', { waitUntil: 'load' });
+    await sleep(2500); // initial element pass
+    const t0 = await p.evaluate(() => performance.now());
+    await p.evaluate(async () => {
+      for (let b = 0; b < 5; b++) {
+        const s = document.createElement('section');
+        for (let i = 0; i < 60; i++) { const d = document.createElement('div'); d.className = 'card xo-photo'; s.appendChild(d); }
+        document.body.insertBefore(s, document.body.firstChild);
+        await new Promise(r => setTimeout(r, 400));
+      }
+    });
+    await sleep(1000);
+    const [long, marked] = await p.evaluate(() => [window.__long, document.querySelectorAll('.card[data-dark-bg]').length]);
+    await p.close();
+    const after = long.filter(([start]) => start > t0).map(([, d]) => d);
+    assert(marked === 300, `${marked}/300 cards re-inverted`);
+    assert(after.every(d => d < 50), `long tasks while appending: ${after.join(', ')} ms`);
+    return `${marked} cards, long=[${after.join(',')}]`;
   });
 }
 

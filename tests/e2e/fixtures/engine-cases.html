@@ -32,6 +32,12 @@
   <video id="vid" poster="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGklEQVR4AWN8ICDwnwEJMDGgASYGNMDEgAYAg+QCBygajHwAAAAASUVORK5CYII=" width="200" height="110"></video>
   <button id="vid-btn" onclick="document.getElementById('vid').requestFullscreen()">video fullscreen</button>
   <button id="fs-btn" onclick="document.getElementById('fs').requestFullscreen()">fullscreen</button>
+  <!-- Hero pattern: a photo layer covering the box with white content drawn over it. -->
+  <div id="cover" class="box" style="position:relative;overflow:hidden">
+    <picture><source srcset="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGklEQVR4AWN8ICDwnwEJMDGgASYGNMDEgAYAg+QCBygajHwAAAAASUVORK5CYII="><img id="cover-img" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGklEQVR4AWN8ICDwnwEJMDGgASYGNMDEgAYAg+QCBygajHwAAAAASUVORK5CYII=" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"></picture>
+    <div id="cover-over" style="position:absolute;left:10px;top:10px;width:90px;height:40px;background:#fff"></div>
+    <h3 style="position:relative;margin:0;padding:64px 10px 0;color:#fff">Over a photo</h3>
+  </div>
 </main>
 <dialog id="dlg">modal dialog (white)</dialog>
 <div class="tall"></div>
