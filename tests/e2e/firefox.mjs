@@ -61,7 +61,7 @@ console.log(`\n${suite.name}  (${manifest.name} v${manifest.version}, MV${manife
 fs.mkdirSync(ARTIFACTS, { recursive: true });
 
 // An extension page used as a privileged handle for storage/tabs access.
-const ext = await browser.newPage();
+let ext = await browser.newPage();
 await gotoExt(ext, `${base}/${popupPath}`);
 await sleep(300);
 const storage = () => ext.evaluate(() => browser.storage.local.get(null));
@@ -195,6 +195,38 @@ if (!LEGACY) {
     await sleep(600);
     const on = pageTone(await shot(light, 'cmd-on'));
     assert(isLight(off) && isDark(on), `off rgb(${off}) on rgb(${on})`);
+  });
+
+  await suite.test('after an update, the old copy’s <style> is replaced and off really means off', async () => {
+    const p = await open('http://update.test/light.html', 500);
+    await browser.installExtension(extDir); // same id: an update, the old content-script context dies
+    await sleep(1500);
+    const n = await p.evaluate(() => document.querySelectorAll('style#dark-by-eyed').length);
+    ext = await browser.newPage(); // extension pages are closed by the update
+    await gotoExt(ext, `${base}/${popupPath}`);
+    await setStorage({ enabled: false });
+    await sleep(600);
+    const off = pageTone(await shot(p, 'update-off'));
+    await setStorage({ enabled: true });
+    await sleep(400);
+    await p.close();
+    assert(n === 1 && isLight(off), `engine styles after update: ${n}, page with master off rgb(${off})`);
+  });
+
+  // Last: revoking host access cannot be undone without a permission prompt.
+  await suite.test('popup without host access offers to grant it (instead of "browser page")', async () => {
+    const tabId = await tabIdFor('http://light.test/*'); // not visible to the extension afterwards
+    await ext.evaluate(() => browser.permissions.remove({ origins: ['<all_urls>'] }));
+    await light.reload({ waitUntil: 'load' });
+    await sleep(400);
+    const popup = await browser.newPage();
+    await gotoExt(popup, `${base}/${popupPath}?tabId=${tabId}`);
+    await sleep(400);
+    const r = await popup.evaluate(() => [document.getElementById('site-status').textContent.trim(), !document.getElementById('grant-access').hidden, document.getElementById('current-host').textContent.trim()]);
+    await shot(popup, 'popup-no-access');
+    await popup.close();
+    assert(/needs access/.test(r[0]) && r[1] && r[2] !== 'Browser page', `status "${r[0]}", grant button ${r[1] ? 'shown' : 'hidden'}, host "${r[2]}"`);
+    return `"${r[2]}": ${r[0]}`;
   });
 }
 

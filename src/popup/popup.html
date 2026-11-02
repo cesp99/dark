@@ -45,6 +45,7 @@
         <div class="site-text">
           <label for="site-toggle" class="host-label"><span class="sr">Dark mode on </span><span id="current-host" class="host">…</span></label>
           <p id="site-status" class="status" aria-live="polite"></p>
+          <button type="button" id="grant-access" class="btn grant" hidden>Allow access</button>
         </div>
         <span class="switch">
           <input type="checkbox" id="site-toggle" role="switch" aria-describedby="site-status site-rule">
@@ -76,17 +77,17 @@
         <div class="slider-row">
           <label for="brightness">Brightness</label>
           <input type="range" id="brightness" step="1" data-key="brightness">
-          <output for="brightness" id="brightness-value"></output>
+          <output for="brightness" id="brightness-value" aria-hidden="true"></output>
         </div>
         <div class="slider-row">
           <label for="contrast">Contrast</label>
           <input type="range" id="contrast" step="1" data-key="contrast">
-          <output for="contrast" id="contrast-value"></output>
+          <output for="contrast" id="contrast-value" aria-hidden="true"></output>
         </div>
         <div class="slider-row">
           <label for="sepia">Sepia</label>
           <input type="range" id="sepia" step="1" data-key="sepia">
-          <output for="sepia" id="sepia-value"></output>
+          <output for="sepia" id="sepia-value" aria-hidden="true"></output>
         </div>
       </section>
 
@@ -125,7 +126,7 @@
       <form class="add" id="site-form" novalidate>
         <label for="site-input" class="sr" id="site-input-label">Add a site</label>
         <input type="text" id="site-input" autocomplete="off" autocapitalize="off" spellcheck="false"
-               placeholder="example.com, *.example.com or a link" aria-describedby="site-error site-note">
+               placeholder="example.com, *.example.com or a link">
         <button type="submit" id="site-add" class="btn">Add</button>
       </form>
       <p id="site-error" class="field-error" role="alert" hidden></p>

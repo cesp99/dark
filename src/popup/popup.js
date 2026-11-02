@@ -14,7 +14,7 @@
   const {
     api, DEFAULTS, LIMITS, sanitize, getSettings, setSettings, siteStatus, decide,
     toggleSiteUpdate, parseSiteInput, matchPattern, matchingPatterns, listKey, isRestrictedUrl, hostFromUrl,
-    normalizeHost,
+    normalizeHost, siteOn, isForced, toUnicodeHost,
   } = globalThis.DarkCore;
 
   const $ = id => document.getElementById(id);
@@ -22,7 +22,7 @@
     body: document.body,
     master: $('master-toggle'), masterState: $('master-state'),
     card: $('site-card'), thumbPage: $('thumb-page'), host: $('current-host'),
-    status: $('site-status'), siteToggle: $('site-toggle'), rule: $('site-rule'),
+    status: $('site-status'), siteToggle: $('site-toggle'), rule: $('site-rule'), grant: $('grant-access'),
     modeBlack: $('mode-blacklist'), modeWhite: $('mode-whitelist'), modeHint: $('mode-hint'),
     reset: $('reset-adjust'),
     followSystem: $('follow-system'), detectDark: $('detect-dark'),
@@ -43,7 +43,7 @@
 
   let settings = sanitize({});
   /** What the popup is pointed at: {tabId, url, host, restricted, label} */
-  let target = { tabId: null, url: '', host: '', restricted: true, label: '' };
+  let target = { tabId: null, url: '', host: '', restricted: true, label: '', needsAccess: false };
   /** Reply from the content script, or null when there is none (yet). */
   let pageState = null;
   let pageStateSeq = 0;
@@ -71,17 +71,31 @@
     if (!url) { t.label = 'Browser page'; t.url = 'about:'; return t; }
     t.restricted = isRestrictedUrl(url);
     t.host = t.restricted ? '' : hostFromUrl(url);
-    if (t.host) { t.label = t.host; return t; }
+    if (t.host) { t.label = toUnicodeHost(t.host); return t; }
     try {
       const u = new URL(url);
       if (u.protocol === 'file:') t.label = 'Local file';
       else if (/^(moz|chrome)-extension:$/.test(u.protocol)) t.label = 'Extension page';
-      else if (u.protocol === 'http:' || u.protocol === 'https:') t.label = normalizeHost(u.hostname);
+      else if (u.protocol === 'http:' || u.protocol === 'https:') t.label = toUnicodeHost(normalizeHost(u.hostname));
       else t.label = `${u.protocol}${u.host ? '//' + u.host : u.pathname}`;
     } catch {
       t.label = 'This page';
     }
     return t;
+  }
+
+  /**
+   * Without host access (Firefox lets users revoke it; Chrome has "on click" site access) the tab's URL is
+   * hidden, which looks like a browser page. Find out, so the popup can offer to grant access instead.
+   */
+  async function checkAccess() {
+    if (target.tabId == null || target.url !== 'about:' || !api.permissions?.contains) return;
+    try {
+      target.needsAccess = !(await api.permissions.contains({ origins: ['<all_urls>'] }));
+    } catch {
+      target.needsAccess = false;
+    }
+    if (target.needsAccess) target.label = 'This site';
   }
 
   // ------------------------------------------------------------------ page state
@@ -117,7 +131,18 @@
     'not-listed': 'Not on your list, so it stays light.',
     'native-dark': 'Uses its own dark theme.',
     'no-host': 'Nothing to darken on this page.',
+    forced: 'Dark mode is on, over the site’s own dark theme.',
   };
+  const LOCAL_FILE = {
+    on: 'Local files are darkened in “Everywhere, except…” mode.',
+    'not-listed': 'Local files are only darkened in “Everywhere, except…” mode.',
+  };
+
+  /** The page's own native-dark detection, when its content script told us (else the cache decides). */
+  const pageEnv = () => ({
+    systemDark: systemDark.matches,
+    nativeDark: typeof pageState?.nativeDark === 'boolean' ? pageState.nativeDark : pageState ? pageState.reason === 'native-dark' : undefined,
+  });
 
   function filterFor(s) {
     return `invert(1) hue-rotate(180deg) brightness(${s.brightness / 100}) contrast(${s.contrast / 100}) sepia(${s.sepia / 100})`;
@@ -130,18 +155,26 @@
     let state, dark = false, checked = false, text;
     if (target.restricted || !target.host) {
       state = 'restricted';
-      text = target.tabId == null
-        ? 'Open a website to control dark mode here.'
-        : target.url.startsWith('file:')
-          ? 'Local files can’t be added to your lists.'
-          : 'Browsers don’t let extensions change this page.';
+      if (target.url.startsWith('file:')) {
+        // Local files have no host to list: they follow the list mode.
+        const d = decide(settings, '', { systemDark: systemDark.matches, localFile: true });
+        dark = d.dark;
+        text = `${LOCAL_FILE[d.reason] || STATUS[d.reason] || ''} They can’t be added to your lists.`;
+      } else {
+        text = target.tabId == null
+          ? 'Open a website to control dark mode here.'
+          : target.needsAccess
+            ? 'Dark by Eyed needs access to websites to darken this page.'
+            : 'Browsers don’t let extensions change this page.';
+      }
     } else {
-      const env = { systemDark: systemDark.matches, nativeDark: pageState?.reason === 'native-dark' };
+      const env = pageEnv();
       const d = decide(settings, target.host, env);
       state = d.reason;
       dark = d.dark;
-      checked = siteStatus(settings, target.host).wantsDark;
+      checked = siteOn(settings, target.host, env);
       text = STATUS[d.reason] || '';
+      if (d.dark && isForced(settings, target.host) && env.nativeDark) text = STATUS.forced;
       // The tab was open before the extension could reach it: say so instead of claiming "on".
       if (d.dark && pageStateKnown && !pageState) {
         text = 'Reload the tab to darken it.';
@@ -154,6 +187,7 @@
     el.status.textContent = text;
     el.siteToggle.disabled = state === 'restricted';
     el.siteToggle.checked = checked;
+    el.grant.hidden = !(state === 'restricted' && target.needsAccess);
 
     renderRuleNote();
   }
@@ -169,7 +203,8 @@
     rules.forEach((p, i) => {
       if (i) el.rule.append(', ');
       const code = document.createElement('code');
-      code.textContent = p;
+      code.textContent = toUnicodeHost(p);
+      code.title = p;
       el.rule.append(code);
     });
     el.rule.append(`. Turning ${black ? 'on' : 'off'} removes ${rules.length > 1 ? 'those rules' : 'that rule'}.`);
@@ -205,7 +240,12 @@
       paintSlider(key);
       if (Number(input.value) !== DEFAULTS[key]) allDefault = false;
     }
-    el.reset.disabled = allDefault;
+    setResetEnabled(!allDefault);
+  }
+
+  // aria-disabled instead of disabled: disabling the focused button would drop focus to <body>.
+  function setResetEnabled(on) {
+    el.reset.setAttribute('aria-disabled', String(!on));
   }
 
   function paintSlider(key) {
@@ -214,6 +254,7 @@
     const v = Number(input.value);
     input.style.setProperty('--pct', `${((v - lo) / (hi - lo)) * 100}%`);
     output.textContent = `${v}%`;
+    input.setAttribute('aria-valuetext', `${v}%`);
     output.classList.toggle('changed', v !== DEFAULTS[key]);
   }
 
@@ -238,9 +279,15 @@
     const items = list.slice().sort((a, b) => sortKey(a).localeCompare(sortKey(b)))
       .filter(p => !q || p.includes(q));
 
+    // Keep keyboard focus on the same item across re-renders.
+    const focused = el.list.contains(document.activeElement) ? document.activeElement.closest('li')?.dataset.site : null;
     const frag = document.createDocumentFragment();
     for (const pattern of items) frag.append(listItem(pattern));
     el.list.replaceChildren(frag);
+    if (focused) {
+      const li = [...el.list.children].find(x => x.dataset.site === focused);
+      (li ? li.querySelector('[data-remove]') : el.input).focus();
+    }
 
     el.empty.hidden = list.length > 0;
     el.empty.textContent = black
@@ -251,7 +298,8 @@
     // One-click add for the current site when the list doesn't cover it yet.
     const canQuickAdd = !!target.host && !target.restricted && !el.input.value.trim()
       && !matchingPatterns(list, target.host).length;
-    el.quickHost.textContent = target.host;
+    el.quickHost.textContent = toUnicodeHost(target.host);
+    el.quickAdd.title = target.host;
     el.quickAdd.hidden = !canQuickAdd;
   }
 
@@ -262,12 +310,13 @@
     const name = document.createElement('span');
     name.className = 'pattern';
     name.title = pattern;
+    const shown = toUnicodeHost(pattern);
     if (pattern.startsWith('*.')) {
-      name.append(wild('*.'), pattern.slice(2));
+      name.append(wild('*.'), shown.slice(2));
     } else if (pattern.endsWith('.*')) {
-      name.append(pattern.slice(0, -2), wild('.*'));
+      name.append(shown.slice(0, -2), wild('.*'));
     } else {
-      name.textContent = pattern;
+      name.textContent = shown;
     }
     li.append(name);
 
@@ -287,7 +336,7 @@
     btn.type = 'button';
     btn.className = 'remove';
     btn.dataset.remove = '';
-    btn.setAttribute('aria-label', `Remove ${pattern}`);
+    btn.setAttribute('aria-label', `Remove ${shown}`);
     btn.title = 'Remove';
     btn.append(crossIcon());
     li.append(btn);
@@ -327,42 +376,78 @@
   }
 
   let noteTimer = null;
+  let noteDelay = 0;
   let undoAction = null;
   function showNote(parts, undo) {
     clearTimeout(noteTimer);
     el.noteText.replaceChildren(...parts.map(p => {
       if (typeof p === 'string') return p;
       const c = document.createElement('code');
-      c.textContent = p.code;
+      c.textContent = toUnicodeHost(p.code);
+      c.title = p.code;
       return c;
     }));
     undoAction = undo || null;
     el.undo.hidden = !undo;
     el.note.hidden = false;
-    noteTimer = setTimeout(hideNote, undo ? 7000 : 3500);
+    noteDelay = undo ? 7000 : 3500;
+    armNote();
+    describeInput();
+  }
+  /** The note stays while it has focus or the pointer (WCAG 2.2.1); the timer restarts afterwards. */
+  function armNote() {
+    clearTimeout(noteTimer);
+    if (el.note.hidden || el.note.matches(':hover') || el.note.contains(document.activeElement)) return;
+    noteTimer = setTimeout(hideNote, noteDelay);
   }
   function hideNote() {
     clearTimeout(noteTimer);
+    const hadFocus = el.note.contains(document.activeElement);
     el.note.hidden = true;
+    el.noteText.replaceChildren();
+    el.undo.hidden = true;
     undoAction = null;
+    describeInput();
+    if (hadFocus) el.input.focus();
+  }
+
+  /** The input is described only by messages that are visible (hidden text would still be read). */
+  function describeInput() {
+    const ids = [];
+    if (!el.error.hidden) ids.push('site-error');
+    if (!el.note.hidden) ids.push('site-note');
+    if (ids.length) el.input.setAttribute('aria-describedby', ids.join(' '));
+    else el.input.removeAttribute('aria-describedby');
   }
 
   function showError(message) {
     el.error.textContent = message;
     el.error.hidden = false;
     el.input.setAttribute('aria-invalid', 'true');
+    describeInput();
   }
   function clearError() {
     if (el.error.hidden) return;
     el.error.hidden = true;
     el.error.textContent = '';
     el.input.removeAttribute('aria-invalid');
+    describeInput();
   }
 
   async function writeList(key, list) {
     settings = sanitize({ ...settings, [key]: list });
     renderAll();
     await setSettings({ [key]: list });
+  }
+
+  /**
+   * With a long list the field also filters it. Enter on a bare word that matches listed sites is a
+   * search, not a new site ("goog" while looking for *.google.com); the Add button still adds it.
+   */
+  function isSearchTerm() {
+    const list = settings[listKey(settings)];
+    const q = el.input.value.trim().toLowerCase();
+    return list.length > FILTER_THRESHOLD && /^[^.*:/]+$/.test(q) && list.some(p => p.includes(q) && p !== q);
   }
 
   async function addSite() {
@@ -493,8 +578,9 @@
     el.siteToggle.addEventListener('change', () => {
       if (target.restricted || !target.host) { renderSite(); return; }
       const want = el.siteToggle.checked;
-      if (siteStatus(settings, target.host).wantsDark === want) return;
-      save(toggleSiteUpdate(settings, target.host));
+      const env = pageEnv();
+      if (siteOn(settings, target.host, env) === want) return;
+      save(toggleSiteUpdate(settings, target.host, env));
       schedulePageState(400);
     });
 
@@ -516,7 +602,7 @@
         const v = Number(input.value);
         settings = sanitize({ ...settings, [key]: v });
         paintSlider(key);
-        el.reset.disabled = SLIDERS.every(s => Number(s.input.value) === DEFAULTS[s.key]);
+        setResetEnabled(!SLIDERS.every(s => Number(s.input.value) === DEFAULTS[s.key]));
         renderSite();
         queueSlider(key, v);
       });
@@ -532,6 +618,7 @@
     }
 
     el.reset.addEventListener('click', () => {
+      if (el.reset.getAttribute('aria-disabled') === 'true') return;
       activeSlider = null;
       save({ brightness: DEFAULTS.brightness, contrast: DEFAULTS.contrast, sepia: DEFAULTS.sepia });
     });
@@ -553,6 +640,30 @@
     });
 
     el.form.addEventListener('submit', e => { e.preventDefault(); addSite().catch(err => console.error('[dark]', err)); });
+    el.input.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || !isSearchTerm()) return;
+      e.preventDefault();
+      clearError();
+      showNote(['Showing matches. Press Add to add ', { code: el.input.value.trim().toLowerCase() }, ' as a site.']);
+    });
+    el.grant.addEventListener('click', () => {
+      // Must be called straight from the click (user gesture).
+      api.permissions.request({ origins: ['<all_urls>'] }).then(granted => {
+        if (!granted) return;
+        if (target.tabId != null) api.tabs.reload(target.tabId).catch(() => {});
+        location.reload();
+      }, err => console.error('[dark] permission request failed', err));
+    });
+    for (const ev of ['focusin', 'focusout', 'pointerenter', 'pointerleave']) {
+      el.note.addEventListener(ev, () => setTimeout(armNote, 0));
+    }
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z' && undoAction
+        && document.activeElement !== el.input) {
+        e.preventDefault();
+        el.undo.click();
+      }
+    });
     el.input.addEventListener('input', () => {
       clearError();
       const filtering = settings[listKey(settings)].length > FILTER_THRESHOLD;
@@ -586,12 +697,21 @@
     api.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       const next = { ...settings };
+      const keys = [];
       for (const [k, { newValue }] of Object.entries(changes)) {
         if (!(k in DEFAULTS) || isDragging(k)) continue;
         next[k] = newValue;
+        keys.push(k);
       }
+      if (!keys.length) return;
+      const before = settings;
       settings = sanitize(next);
-      renderAll();
+      renderGlobal();
+      renderSliders();
+      renderSite();
+      // Rebuilding the list moves focus and resets hover: only when the visible list changed.
+      const key = listKey(settings);
+      if (keys.includes('listMode') || JSON.stringify(before[key]) !== JSON.stringify(settings[key])) renderList();
       schedulePageState();
     });
   }
@@ -601,6 +721,7 @@
     const [s, tab] = await Promise.all([getSettings(), resolveTab()]);
     settings = s;
     target = describeTarget(tab);
+    await checkAccess();
     renderAll();
     renderShortcut();
     await refreshPageState();
