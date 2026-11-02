@@ -29,9 +29,16 @@ The engine does not repaint elements. It inverts the whole page once with a GPU 
 element and re-inverts media so photos and video keep their real colours:
 
 ```
-html            { filter: invert(1) hue-rotate(180deg) [brightness/contrast/sepia] }
-img, video, …   { filter: invert(1) hue-rotate(180deg) }   /* cancel the root inversion */
+:root            { filter: invert(0.93) hue-rotate(180deg) [brightness/contrast/sepia] }
+img, video, …    { filter: invert(1) hue-rotate(180deg) contrast(1.163) }   /* exact inverse */
+photo bg images  { same }   /* selectors harvested from stylesheets + inline styles */
+nested media     { filter: none }   /* never invert twice */
 ```
+
+`invert(0.93)` maps white to #121212 and black to #ededed (softer than pure black, and leaves headroom for
+the brightness slider); media gets the mathematical inverse so mid-tones are exact. SVG `<img>`s follow
+the page (they are almost always dark-ink logos/icons). See the header comment of `src/engine.js` for
+browser-specific notes (canvas background, top layer, WebKit SVG).
 
 Cost is a single compositing filter instead of style recalculation over every element (legacy: a
 universal `*{…!important}` rule, ~550 ms RecalcStyle on a 4000-row page).
