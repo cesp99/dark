@@ -13,7 +13,8 @@
     "test:firefox": "node tests/e2e/firefox.mjs",
     "test:legacy": "node tests/e2e/chrome.mjs --legacy",
     "lint:firefox": "web-ext lint --source-dir dist/firefox",
-    "screenshots": "node scripts/store-screenshots.mjs"
+    "screenshots": "node scripts/store-screenshots.mjs",
+    "promo": "node scripts/store-promo.mjs"
   },
   "devDependencies": {
     "playwright": "^1.64.1",

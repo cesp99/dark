@@ -86,6 +86,7 @@ node tests/e2e/engine.mjs [--firefox]   # engine rendering/performance cases
 npm run test:legacy    # same Chromium suite against the v1 extension from main
 npm run lint:firefox
 npm run screenshots    # store screenshots on medium.com -> store/screenshots/ (needs a display)
+npm run promo          # store promo tiles (440x280, 1400x560) -> store/promo/
 ```
 
 The rendering engine (`src/engine.js`) is shared verbatim with [dark.js](https://github.com/cesp99/dark.js).
