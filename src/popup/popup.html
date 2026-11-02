@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Dark by Eyed</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="../icons/48.png" alt="" width="24" height="24">
+      <span class="wordmark">Dark <span class="by">by Eyed™</span></span>
+    </div>
+    <div class="master">
+      <label for="master-toggle" class="master-label"><span class="sr">Dark by Eyed</span><span id="master-state" aria-hidden="true">On</span></label>
+      <span class="switch">
+        <input type="checkbox" id="master-toggle" role="switch" aria-describedby="master-desc">
+        <span class="track" aria-hidden="true"></span>
+      </span>
+      <span id="master-desc" class="sr">Turns dark mode on or off on every site</span>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" id="tab-controls" data-tab="controls" aria-controls="panel-controls" aria-selected="true">Controls</button>
+    <button type="button" role="tab" id="tab-sites" data-tab="sites" aria-controls="panel-sites" aria-selected="false" tabindex="-1">Sites <span class="count" id="site-count"></span></button>
+  </nav>
+
+  <main class="panels">
+    <!-- Controls -->
+    <section class="panel" id="panel-controls" role="tabpanel" aria-labelledby="tab-controls" tabindex="0">
+      <div class="site-card" id="site-card" data-state="loading">
+        <div class="thumb" id="thumb" aria-hidden="true">
+          <div class="thumb-page" id="thumb-page">
+            <span class="t-bar"></span>
+            <span class="t-line t-head"></span>
+            <span class="t-img"></span>
+            <span class="t-line t-a"></span>
+            <span class="t-line t-b"></span>
+            <span class="t-line t-c"></span>
+          </div>
+        </div>
+        <div class="site-text">
+          <label for="site-toggle" class="host-label"><span class="sr">Dark mode on </span><span id="current-host" class="host">…</span></label>
+          <p id="site-status" class="status" aria-live="polite"></p>
+        </div>
+        <span class="switch">
+          <input type="checkbox" id="site-toggle" role="switch" aria-describedby="site-status site-rule">
+          <span class="track" aria-hidden="true"></span>
+        </span>
+      </div>
+      <p id="site-rule" class="rule-note" hidden></p>
+
+      <fieldset class="group mode">
+        <legend class="group-title">Where to darken</legend>
+        <div class="segmented">
+          <span class="seg">
+            <input type="radio" name="mode" id="mode-blacklist" value="blacklist" aria-describedby="mode-hint">
+            <label for="mode-blacklist">Everywhere, except…</label>
+          </span>
+          <span class="seg">
+            <input type="radio" name="mode" id="mode-whitelist" value="whitelist" aria-describedby="mode-hint">
+            <label for="mode-whitelist">Only on…</label>
+          </span>
+        </div>
+        <p class="hint" id="mode-hint"></p>
+      </fieldset>
+
+      <section class="group adjust" aria-labelledby="adjust-title">
+        <div class="group-head">
+          <h2 class="group-title" id="adjust-title">Adjust</h2>
+          <button type="button" class="text-btn" id="reset-adjust">Reset</button>
+        </div>
+        <div class="slider-row">
+          <label for="brightness">Brightness</label>
+          <input type="range" id="brightness" step="1" data-key="brightness">
+          <output for="brightness" id="brightness-value"></output>
+        </div>
+        <div class="slider-row">
+          <label for="contrast">Contrast</label>
+          <input type="range" id="contrast" step="1" data-key="contrast">
+          <output for="contrast" id="contrast-value"></output>
+        </div>
+        <div class="slider-row">
+          <label for="sepia">Sepia</label>
+          <input type="range" id="sepia" step="1" data-key="sepia">
+          <output for="sepia" id="sepia-value"></output>
+        </div>
+      </section>
+
+      <section class="group options" aria-labelledby="options-title">
+        <h2 class="group-title" id="options-title">Behaviour</h2>
+        <div class="option">
+          <div class="option-text">
+            <label for="follow-system">Match my system theme</label>
+            <p class="hint" id="follow-system-hint">Only darken while your OS is set to dark.</p>
+          </div>
+          <span class="switch small">
+            <input type="checkbox" id="follow-system" role="switch" aria-describedby="follow-system-hint">
+            <span class="track" aria-hidden="true"></span>
+          </span>
+        </div>
+        <div class="option">
+          <div class="option-text">
+            <label for="detect-dark">Respect sites’ own dark themes</label>
+            <p class="hint" id="detect-dark-hint">Skip sites that already look dark.</p>
+          </div>
+          <span class="switch small">
+            <input type="checkbox" id="detect-dark" role="switch" aria-describedby="detect-dark-hint">
+            <span class="track" aria-hidden="true"></span>
+          </span>
+        </div>
+      </section>
+    </section>
+
+    <!-- Sites -->
+    <section class="panel" id="panel-sites" role="tabpanel" aria-labelledby="tab-sites" tabindex="-1" hidden>
+      <div class="list-head">
+        <h2 class="list-title" id="list-title">Kept light</h2>
+        <p class="hint" id="list-hint"></p>
+      </div>
+
+      <form class="add" id="site-form" novalidate>
+        <label for="site-input" class="sr" id="site-input-label">Add a site</label>
+        <input type="text" id="site-input" autocomplete="off" autocapitalize="off" spellcheck="false"
+               placeholder="example.com, *.example.com or a link" aria-describedby="site-error site-note">
+        <button type="submit" id="site-add" class="btn">Add</button>
+      </form>
+      <p id="site-error" class="field-error" role="alert" hidden></p>
+      <p id="site-note" class="field-note" role="status" hidden><span id="site-note-text"></span> <button type="button" class="text-btn" id="site-undo" hidden>Undo</button></p>
+
+      <button type="button" id="site-add-current" class="quick-add" hidden>
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <span>Add <code id="quick-host"></code></span>
+      </button>
+
+      <ul id="site-list" class="site-list" aria-labelledby="list-title"></ul>
+      <p id="site-empty" class="empty" hidden></p>
+      <p id="site-nomatch" class="empty" hidden>No listed site matches that.</p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p class="shortcut"><span id="shortcut-keys" class="keys"></span> <span id="shortcut-text">toggles the current site</span></p>
+    <a href="https://github.com/cesp99/dark" target="_blank" rel="noopener noreferrer" class="source">Source
+      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3 1h6v6M9 1 1.5 8.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </a>
+  </footer>
+
+  <script src="../shared/core.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
