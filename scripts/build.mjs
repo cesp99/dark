@@ -78,7 +78,12 @@ for (const [name, manifest] of Object.entries(TARGETS)) {
   if (process.argv.includes('--zip')) {
     const zip = path.join(DIST, `dark-${name}-${pkg.version}.zip`);
     fs.rmSync(zip, { force: true });
-    execFileSync('zip', ['-qr', zip, '.'], { cwd: out });
+    try {
+      execFileSync('zip', ['-qr', zip, '.'], { cwd: out, stdio: 'ignore' });
+    } catch {
+      // No `zip` binary (e.g. minimal Linux installs): Python's zipfile stores paths relative to cwd.
+      execFileSync('python3', ['-m', 'zipfile', '-c', zip, ...fs.readdirSync(out)], { cwd: out });
+    }
     console.log(`zipped ${path.relative(ROOT, zip)}`);
   }
   console.log(`built ${path.relative(ROOT, out) || out}`);
